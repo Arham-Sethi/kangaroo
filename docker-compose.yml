@@ -1,0 +1,5 @@
+## Root convenience — delegates to infra/docker-compose.yml
+## Usage: docker compose up
+
+include:
+  - path: infra/docker-compose.yml

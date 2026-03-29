@@ -1,0 +1,18 @@
+services:
+  local-daemon:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command: uvicorn app.main:create_app --factory --host 127.0.0.1 --port 7400 --reload
+    environment:
+      LOCAL_MODE_ENABLED: "true"
+      STORAGE_BACKEND: local
+      STORAGE_LOCAL_PATH: /app/storage
+    ports:
+      - "7400:7400"
+    volumes:
+      - ../backend:/app
+      - localstorage:/app/storage
+
+volumes:
+  localstorage:

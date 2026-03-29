@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kangaroo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kangaroo}
+      POSTGRES_DB: ${POSTGRES_DB:-kangaroo}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kangaroo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.11
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-kangaroo-dev-master-key}
+      MEILI_ENV: development
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilidata:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command: uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kangaroo:kangaroo@postgres:5432/kangaroo
+      DATABASE_SYNC_URL: postgresql://kangaroo:kangaroo@postgres:5432/kangaroo
+      REDIS_URL: redis://redis:6379/0
+      MEILI_URL: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-kangaroo-dev-master-key}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-prod}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-jwt-secret-change-in-prod}
+      DEBUG: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../frontend/src:/app/src
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  meilidata:
