@@ -1,4 +1,27 @@
+# ============================================================================
+# Kangaroo Shift — Docker Compose (Local Development)
+#
+# Usage: docker compose up
+#
+# This brings up the full stack:
+#   - PostgreSQL 16 + pgvector (vector similarity search)
+#   - Redis 7 (cache + message queue)
+#   - Meilisearch (metadata search index)
+#   - Backend (FastAPI with hot-reload)
+#   - Frontend (Next.js with hot-reload)
+#
+# Production differences:
+#   - Managed database (RDS/Cloud SQL), not a container
+#   - Managed Redis (ElastiCache/Memorystore)
+#   - Kubernetes orchestration instead of Docker Compose
+#   - TLS termination at load balancer
+#   - Secrets from AWS Secrets Manager / Vault, not .env files
+# ============================================================================
+
 services:
+  # ── PostgreSQL + pgvector ─────────────────────────────────────────────
+  # pgvector enables vector similarity search for semantic context matching.
+  # Data persists across container restarts via named volume.
   postgres:
     image: pgvector/pgvector:pg16
     environment:
@@ -10,13 +33,23 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kangaroo"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kangaroo} -d ${POSTGRES_DB:-kangaroo}"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
+  # ── Redis 7 ───────────────────────────────────────────────────────────
+  # Used for: session cache, rate limit counters, Redis Streams (message queue),
+  # real-time pub/sub for webhook delivery.
   redis:
     image: redis:7-alpine
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --appendonly yes
     ports:
       - "6379:6379"
     volumes:
@@ -26,28 +59,51 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
+  # ── Meilisearch ───────────────────────────────────────────────────────
+  # Indexes METADATA ONLY (titles, tags, timestamps, LLM names).
+  # Encrypted conversation content is NEVER indexed here.
+  # This is a deliberate security architecture decision.
   meilisearch:
     image: getmeili/meilisearch:v1.11
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-kangaroo-dev-master-key}
       MEILI_ENV: development
+      MEILI_MAX_INDEXING_MEMORY: 256MiB
     ports:
       - "7700:7700"
     volumes:
       - meilidata:/meili_data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
-      interval: 5s
+      test: ["CMD", "curl", "-sf", "http://localhost:7700/health"]
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
+  # ── Backend (FastAPI) ─────────────────────────────────────────────────
+  # Hot-reload enabled for development. Volume mount syncs code changes.
+  # Waits for all dependencies to be healthy before starting.
   backend:
     build:
       context: ../backend
       dockerfile: Dockerfile
-    command: uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
+      target: development
+    command: uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --reload --log-level debug
     environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: debug
       DATABASE_URL: postgresql+asyncpg://kangaroo:kangaroo@postgres:5432/kangaroo
       DATABASE_SYNC_URL: postgresql://kangaroo:kangaroo@postgres:5432/kangaroo
       REDIS_URL: redis://redis:6379/0
@@ -55,7 +111,10 @@ services:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-kangaroo-dev-master-key}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-prod}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-jwt-secret-change-in-prod}
-      DEBUG: "true"
+      ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:8000"
+      LOCAL_MODE_ENABLED: "true"
+      PARALLEL_QUERIES_ENABLED: "true"
+      TEAM_FEATURES_ENABLED: "false"
     ports:
       - "8000:8000"
     volumes:
@@ -67,21 +126,31 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
+    restart: unless-stopped
 
+  # ── Frontend (Next.js) ────────────────────────────────────────────────
+  # Volume mount for hot-reload. Only src/ is mounted to avoid
+  # overwriting node_modules inside the container.
   frontend:
     build:
       context: ../frontend
       dockerfile: Dockerfile
+      target: development
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_APP_NAME: "Kangaroo Shift"
     ports:
       - "3000:3000"
     volumes:
       - ../frontend/src:/app/src
     depends_on:
       - backend
+    restart: unless-stopped
 
 volumes:
   pgdata:
+    driver: local
   redisdata:
+    driver: local
   meilidata:
+    driver: local

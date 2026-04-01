@@ -1,0 +1,64 @@
+# =============================================================================
+# Backend .dockerignore
+#
+# Everything listed here is EXCLUDED from the Docker build context.
+# This prevents secrets, caches, and dev files from entering the image.
+# =============================================================================
+
+# Version control (contains full repo history — hundreds of MB)
+.git
+.gitignore
+
+# Environment files (SECRETS — never bake into images)
+.env
+.env.*
+!.env.example
+
+# Python caches (rebuilt inside container)
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+*.egg
+dist
+build
+
+# Virtual environments (container has its own)
+.venv
+venv
+env
+
+# Test artifacts
+.pytest_cache
+.coverage
+htmlcov
+.tox
+.nox
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Documentation (not needed at runtime)
+*.md
+!README.md
+docs/
+
+# Docker files (not needed inside the container)
+Dockerfile
+docker-compose*.yml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Alembic versions are needed (for migrations), but not scripts
+# Keep alembic/ in the build context
+
+# Storage directory (runtime data, not build artifact)
+storage/

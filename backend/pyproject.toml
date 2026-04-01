@@ -16,6 +16,7 @@ dependencies = [
     "alembic>=1.14.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.6.0",
+    "email-validator>=2.2.0",
     "redis>=5.2.0",
     "httpx>=0.28.0",
     "structlog>=24.4.0",
@@ -43,6 +44,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "factory-boy>=3.3.0",
+    "aiosqlite>=0.20.0",
 ]
 
 [tool.pytest.ini_options]

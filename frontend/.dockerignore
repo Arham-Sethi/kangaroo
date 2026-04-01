@@ -1,0 +1,45 @@
+# =============================================================================
+# Frontend .dockerignore
+#
+# Excluding node_modules alone saves 500MB+ from the build context.
+# =============================================================================
+
+# Dependencies (installed fresh inside container via npm ci)
+node_modules
+.pnp
+.pnp.js
+
+# Build output (rebuilt inside container)
+.next
+out
+build
+
+# Version control
+.git
+.gitignore
+
+# Environment files (SECRETS)
+.env
+.env.*
+!.env.example
+
+# Testing
+coverage
+.jest
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker files
+Dockerfile
+docker-compose*.yml
+
+# Documentation
+*.md
+!README.md
