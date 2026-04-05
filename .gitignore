@@ -61,8 +61,8 @@ backend/alembic/versions/*.pyc
 *.log
 logs/
 
-# Object storage (dev)
-storage/
+# Object storage (dev) — only the root-level data dir, not app/core/storage/ source code
+/storage/
 
 # Benchmarks output
 benchmarks/results/
