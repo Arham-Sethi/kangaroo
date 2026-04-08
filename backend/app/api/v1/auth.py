@@ -27,6 +27,7 @@ import jwt
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -421,6 +422,47 @@ async def get_profile(current_user: User = Depends(get_current_user)):
     - SDK to verify authentication is working
     - Tier-gated UI elements (show/hide features based on subscription)
     """
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        display_name=current_user.display_name,
+        subscription_tier=current_user.subscription_tier,
+        is_verified=current_user.is_verified,
+        shifts_this_month=current_user.shifts_this_month,
+        created_at=current_user.created_at,
+        settings=current_user.settings,
+    )
+
+
+class ProfileUpdate(BaseModel):
+    """Partial profile update request."""
+
+    display_name: str | None = Field(default=None, max_length=100)
+    settings: dict | None = None
+
+
+@router.patch(
+    "/profile",
+    response_model=UserResponse,
+    summary="Update current user profile",
+)
+async def update_profile(
+    body: ProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the authenticated user's display name and/or settings.
+
+    Only provided fields are updated; omitted fields are left unchanged.
+    """
+    if body.display_name is not None:
+        current_user.display_name = body.display_name
+    if body.settings is not None:
+        current_user.settings = {**current_user.settings, **body.settings}
+
+    await db.commit()
+    await db.refresh(current_user)
+
     return UserResponse(
         id=current_user.id,
         email=current_user.email,

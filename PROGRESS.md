@@ -4,9 +4,9 @@
 Not just a context shifter — a persistent, intelligent memory that follows you everywhere.
 Memory Engine + Multi-Model Cockpit + Universal Presence + Privacy-First Architecture.
 
-## Current Phase: 4 (Security & Storage) — COMPLETE
-## Current Task: Phase 4 Task 4 — COMPLETE
-## Last Updated: 2026-03-31
+## Current Phase: 5 (Memory Engine — THE BRAIN)
+## Current Task: Phase 5 Task 2 — COMPLETE
+## Last Updated: 2026-04-05
 ## Last Updated By: Claude Code
 
 ## Completed:
@@ -30,6 +30,21 @@ Memory Engine + Multi-Model Cockpit + Universal Presence + Privacy-First Archite
 - [x] Phase 4 Task 2: Session CRUD + Audit Logging (AuditLogger, full CRUD API, ownership auth — 34 tests)
 - [x] Phase 4 Task 3: API Key Management (create/list/revoke, bcrypt hashing, scope validation, X-API-Key auth dependency — 17 tests)
 - [x] Phase 4 Task 4: Webhook System (CRUD, HMAC-SHA256 dispatcher, retry/backoff, auto-disable, event validation — 21 tests)
+- [x] Phase 5 Task 1: Session Persistence (ContextRepository, SessionStore, save/load/list-versions API — 30 tests)
+- [x] Phase 5 Task 2: Cross-Session Memory Consolidation (consolidator, temporal decay, conflict detection — 60 tests)
+
+## Phase 5 Task 2 (COMPLETE — 60 new tests, 754 total):
+- [x] TemporalDecay (`temporal.py`) — exponential half-life decay, reinforcement boost, batch computation (18 tests)
+- [x] ConflictDetector (`conflict.py`) — opposing tech pairs, keyword overlap, cross-session contradiction detection (21 tests)
+- [x] MemoryConsolidator (`consolidator.py`) — entity dedup, decision/task merging, preference union, knowledge graph unification (21 tests)
+- [x] Full pipeline: N sessions → deduplicated brain UCS with conflicts flagged
+
+## Phase 5 Task 1 (COMPLETE — 30 new tests, 694 total):
+- [x] ContextRepository (`repository.py`) — async CRUD for contexts table, is_current management, version listing
+- [x] SessionStore (`session_store.py`) — orchestrates Vault encryption with DB persistence, auto-incrementing versions
+- [x] Persistence API endpoints — POST /save, GET /{id}/current, GET /{id}/versions, GET /{id}/versions/{ctx}, DELETE /versions/{ctx}
+- [x] Full round-trip: raw data → UCS generation → encryption → DB storage → load → decryption → UCS
+- [x] 16 repository tests + 14 session store tests
 
 ## Phase 4 Task 4 (COMPLETE — 21 new tests, 664 total):
 - [x] Webhook Dispatcher (`webhook_dispatcher.py`) — HMAC-SHA256 signing, exponential backoff retry, auto-disable at 10 failures

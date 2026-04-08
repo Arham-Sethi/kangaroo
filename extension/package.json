@@ -1,0 +1,18 @@
+{
+  "name": "kangaroo-shift-extension",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kangaroo Shift browser extension — auto-capture AI conversations",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "node build.mjs",
+    "build:single": "vite build",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "rimraf": "^5.0.0"
+  }
+}

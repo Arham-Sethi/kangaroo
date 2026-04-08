@@ -62,6 +62,9 @@ ACTION_CONTEXT_RETRIEVE = "context.retrieve"
 # Shifts
 ACTION_CONTEXT_SHIFT = "context.shift"
 
+# Capture (browser extension)
+ACTION_SESSION_CAPTURE = "session.capture"
+
 # Import/Export
 ACTION_SESSION_IMPORT = "session.import"
 ACTION_SESSION_EXPORT = "session.export"

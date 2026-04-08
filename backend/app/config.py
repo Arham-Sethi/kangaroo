@@ -112,6 +112,18 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     google_api_key: SecretStr | None = None
 
+    # ── Email (Resend) ───────────────────────────────────────────────────
+    resend_api_key: SecretStr | None = None
+    email_from_address: str = "noreply@kangarooshift.com"
+
+    # ── Stripe ───────────────────────────────────────────────────────────
+    stripe_secret_key: SecretStr | None = None
+    stripe_webhook_secret: SecretStr | None = None
+    stripe_price_id_pro_monthly: str = ""
+    stripe_price_id_pro_annual: str = ""
+    stripe_price_id_team_monthly: str = ""
+    stripe_price_id_team_annual: str = ""
+
     # ── Feature Flags ─────────────────────────────────────────────────────
     local_mode_enabled: bool = True
     parallel_queries_enabled: bool = True

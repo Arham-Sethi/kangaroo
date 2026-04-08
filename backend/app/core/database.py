@@ -71,18 +71,31 @@ def get_engine() -> AsyncEngine:
     - pool_pre_ping=True: Verify connection health before use. Prevents
       "connection already closed" errors after network interruptions.
     - echo=False: SQL logging disabled in production (use debug=True in dev).
+
+    SQLite mode:
+    - When DATABASE_URL starts with "sqlite", connection pooling is
+      disabled (SQLite uses file-level locking, not a connection pool).
+    - This mode is for local development and testing only.
     """
     global _engine
     if _engine is None:
         settings = get_settings()
-        _engine = create_async_engine(
-            settings.database_url,
-            pool_size=settings.db_pool_size,
-            max_overflow=settings.db_max_overflow,
-            pool_recycle=settings.db_pool_recycle,
-            pool_pre_ping=True,
-            echo=settings.debug,
-        )
+        is_sqlite = settings.database_url.startswith("sqlite")
+        if is_sqlite:
+            _engine = create_async_engine(
+                settings.database_url,
+                echo=settings.debug,
+                connect_args={"check_same_thread": False},
+            )
+        else:
+            _engine = create_async_engine(
+                settings.database_url,
+                pool_size=settings.db_pool_size,
+                max_overflow=settings.db_max_overflow,
+                pool_recycle=settings.db_pool_recycle,
+                pool_pre_ping=True,
+                echo=settings.debug,
+            )
     return _engine
 
 
@@ -145,13 +158,25 @@ async def init_db() -> None:
     Called during application startup. If the database is unreachable,
     the app fails fast with a clear error rather than accepting requests
     and failing on the first DB query.
+
+    When running with SQLite (local dev), tables are auto-created if they
+    don't exist yet. This avoids the need for Alembic migrations during
+    local testing.
     """
     engine = get_engine()
+    settings = get_settings()
+    is_sqlite = settings.database_url.startswith("sqlite")
+
     async with engine.begin() as conn:
         # Simple connectivity check — will raise if DB is unreachable
         await conn.execute(
             __import__("sqlalchemy").text("SELECT 1")
         )
+
+        # Auto-create tables for SQLite (local dev convenience)
+        if is_sqlite:
+            from app.core.models.db import Base
+            await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db() -> None:

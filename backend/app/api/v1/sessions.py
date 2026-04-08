@@ -36,6 +36,7 @@ from app.core.database import get_db
 from app.core.models.db import Session, User
 from app.core.security.audit import (
     ACTION_SESSION_ARCHIVE,
+    ACTION_SESSION_CAPTURE,
     ACTION_SESSION_CREATE,
     ACTION_SESSION_DELETE,
     ACTION_SESSION_UPDATE,
@@ -60,6 +61,48 @@ class SessionCreate(BaseModel):
     total_tokens: int = Field(default=0, ge=0)
     tags: list[str] = Field(default_factory=list)
     metadata: dict = Field(default_factory=dict)
+
+
+class CapturedMessage(BaseModel):
+    """A single message from a captured conversation."""
+
+    role: str = Field(pattern="^(user|assistant|system)$")
+    content: str = Field(min_length=1, max_length=500_000)
+    model: str = Field(default="", max_length=100)
+
+
+class CaptureRequest(BaseModel):
+    """Capture a conversation from the browser extension.
+
+    The extension scrapes DOM content from ChatGPT, Claude, and Gemini
+    and POSTs it here for server-side storage and processing.
+    """
+
+    platform: str = Field(
+        max_length=50,
+        pattern="^(chatgpt|claude|gemini)$",
+        description="Source platform identifier.",
+    )
+    model: str = Field(default="", max_length=100, description="Detected LLM model name.")
+    title: str = Field(default="Captured Conversation", max_length=500)
+    url: str = Field(max_length=2000, description="Original conversation URL.")
+    messages: list[CapturedMessage] = Field(
+        min_length=1,
+        max_length=5000,
+        description="Ordered list of conversation messages.",
+    )
+    captured_at: str = Field(description="ISO-8601 timestamp when the conversation was scraped.")
+
+
+class CaptureResponse(BaseModel):
+    """Response after successfully capturing a conversation."""
+
+    session_id: uuid.UUID
+    message_count: int
+    title: str
+    source_llm: str
+    source_model: str
+    created_at: datetime
 
 
 class SessionUpdate(BaseModel):
@@ -366,3 +409,121 @@ async def delete_session(
     )
 
     await db.commit()
+
+
+# ── Platform Mapping ────────────────────────────────────────────────────────
+
+_PLATFORM_TO_LLM: dict[str, str] = {
+    "chatgpt": "openai",
+    "claude": "anthropic",
+    "gemini": "google",
+}
+
+
+@router.post("/capture", response_model=CaptureResponse, status_code=status.HTTP_201_CREATED)
+async def capture_conversation(
+    body: CaptureRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CaptureResponse:
+    """Capture a conversation from the browser extension.
+
+    This endpoint receives scraped conversations from the Kangaroo Shift
+    Chrome extension. The extension auto-captures conversations from
+    ChatGPT, Claude, and Gemini as the user chats.
+
+    The conversation is stored as a new session with all messages
+    preserved in the session's extra_data field. This data feeds
+    the brain's memory consolidation, semantic search, and cross-session
+    knowledge graph.
+
+    Request body matches the extension's sync payload format:
+        - platform: "chatgpt" | "claude" | "gemini"
+        - model: detected model name (e.g., "gpt-4o", "claude-sonnet-4")
+        - title: conversation title scraped from the page
+        - url: original conversation URL
+        - messages: ordered list of {role, content, model}
+        - captured_at: ISO-8601 timestamp from the extension
+
+    Returns:
+        CaptureResponse with the created session ID and metadata.
+
+    Raises:
+        422: Invalid request body (missing fields, bad platform, etc.)
+        401: Missing or expired JWT token.
+    """
+    source_llm = _PLATFORM_TO_LLM.get(body.platform, body.platform)
+
+    # Estimate token count: ~4 chars per token (rough but consistent)
+    total_chars = sum(len(m.content) for m in body.messages)
+    estimated_tokens = total_chars // 4
+
+    # Parse captured_at, fall back to current time on parse failure
+    try:
+        captured_at = datetime.fromisoformat(body.captured_at.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        captured_at = datetime.now(timezone.utc)
+
+    # Store messages as structured data in extra_data
+    messages_data = [
+        {"role": m.role, "content": m.content, "model": m.model}
+        for m in body.messages
+    ]
+
+    session = Session(
+        user_id=user.id,
+        title=body.title or "Captured Conversation",
+        source_llm=source_llm,
+        source_model=body.model,
+        message_count=len(body.messages),
+        total_tokens=estimated_tokens,
+        tags=["auto-capture", body.platform],
+        extra_data={
+            "capture_source": "browser_extension",
+            "platform": body.platform,
+            "url": body.url,
+            "captured_at": captured_at.isoformat(),
+            "messages": messages_data,
+        },
+    )
+    db.add(session)
+    await db.flush()
+
+    # Audit log the capture
+    audit = AuditLogger(db)
+    await audit.log(
+        action=ACTION_SESSION_CAPTURE,
+        resource_type=RESOURCE_SESSION,
+        user_id=user.id,
+        resource_id=session.id,
+        ip_address=request.client.host if request.client else None,
+        metadata={
+            "platform": body.platform,
+            "model": body.model,
+            "message_count": len(body.messages),
+            "estimated_tokens": estimated_tokens,
+            "url": body.url,
+        },
+    )
+
+    await db.commit()
+    await db.refresh(session)
+
+    logger.info(
+        "conversation_captured",
+        session_id=str(session.id),
+        user_id=str(user.id),
+        platform=body.platform,
+        model=body.model,
+        message_count=len(body.messages),
+    )
+
+    return CaptureResponse(
+        session_id=session.id,
+        message_count=session.message_count,
+        title=session.title,
+        source_llm=session.source_llm,
+        source_model=session.source_model,
+        created_at=session.created_at,
+    )

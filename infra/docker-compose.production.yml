@@ -1,0 +1,120 @@
+# ============================================================================
+# Kangaroo Shift — Docker Compose (Production)
+#
+# Usage: docker compose -f infra/docker-compose.production.yml up -d
+#
+# Production topology:
+#   - Backend (FastAPI) — multi-worker Gunicorn with Uvicorn workers
+#   - Frontend (Next.js) — standalone production build
+#   - Nginx reverse proxy — TLS termination, routing, rate limiting
+#
+# External managed services (NOT containers):
+#   - PostgreSQL (RDS / Cloud SQL / Supabase)
+#   - Redis (ElastiCache / Memorystore / Upstash)
+#   - Meilisearch (Meilisearch Cloud or self-hosted)
+#
+# Secrets:
+#   All sensitive values must come from environment or a secret manager.
+#   NEVER commit a .env file with real credentials.
+# ============================================================================
+
+services:
+  # ── Backend (FastAPI) ─────────────────────────────────────────────────
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: runtime
+    command: >
+      gunicorn app.main:create_app
+      --factory
+      --worker-class uvicorn.workers.UvicornWorker
+      --workers 4
+      --bind 0.0.0.0:8000
+      --timeout 120
+      --graceful-timeout 30
+      --keep-alive 5
+      --access-logfile -
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      LOG_LEVEL: info
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      MEILI_URL: ${MEILI_URL}
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_PRICE_PRO_MONTHLY: ${STRIPE_PRICE_PRO_MONTHLY}
+      STRIPE_PRICE_PRO_ANNUAL: ${STRIPE_PRICE_PRO_ANNUAL}
+      STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY}
+      STRIPE_PRICE_TEAM_ANNUAL: ${STRIPE_PRICE_TEAM_ANNUAL}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+    restart: always
+
+  # ── Frontend (Next.js) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      target: runtime
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_APP_NAME: "Kangaroo Shift"
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    restart: always
+
+  # ── Nginx Reverse Proxy ───────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+    restart: always

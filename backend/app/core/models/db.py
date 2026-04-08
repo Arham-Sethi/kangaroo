@@ -43,8 +43,42 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 # This allows the models to work with both PostgreSQL (production) and
 # SQLite (testing). PostgreSQL gets JSONB (indexed, queryable); SQLite
 # gets plain JSON (still stores/retrieves correctly).
+from sqlalchemy.types import TypeDecorator, CHAR
+
 JSONB = PG_JSONB().with_variant(JSON(), "sqlite")
-UUID = PG_UUID
+
+
+class UUIDType(TypeDecorator):
+    """Platform-independent UUID type.
+
+    Uses PostgreSQL's native UUID when available, falls back to
+    CHAR(36) on SQLite for local development/testing.
+    """
+
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return value
+        return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if not isinstance(value, uuid.UUID):
+            return uuid.UUID(str(value))
+        return value
+
+
+UUID = UUIDType
 
 
 # ── Base ──────────────────────────────────────────────────────────────────────
@@ -82,15 +116,15 @@ class Base(DeclarativeBase):
 class SubscriptionTier(str, PyEnum):
     """Pricing tiers that gate feature access.
 
-    FREE:       5 shifts/month, no local mode, no teams
-    PRO:        Unlimited shifts, local mode, version history ($19/mo)
-    TEAM:       All Pro + team workspaces, RBAC, audit logs ($49/user/mo)
-    ENTERPRISE: All Team + SSO, dedicated infra, SLAs (custom pricing)
+    FREE:       10 shifts/month, 5 sessions, weekly digest, 7-day reverse trial
+    PRO:        $12/mo annual, $16/mo monthly — unlimited shifts, 4 team seats
+    PRO_TEAM:   $9/seat/mo annual, $14/seat/mo — 5-50 seats, consensus, full RBAC
+    ENTERPRISE: Custom pricing, unlimited everything, on-prem, SSO, SLA
     """
 
     FREE = "free"
     PRO = "pro"
-    TEAM = "team"
+    PRO_TEAM = "pro_team"
     ENTERPRISE = "enterprise"
 
 
